@@ -233,7 +233,6 @@ export function renderRecursivly(
 		node = node.nextSibling;
 	}
 }
-
 export function recursivelyHitTest(node, x, y) {
 	while (node) {
 		var hit = node.hitTest(x, y);
@@ -498,6 +497,10 @@ export function withRenderTo(Target) {
 				return this;
 			}
 			return null;
+		}
+
+		visibility(hidden) {
+			this._hidden = Boolean(hidden);
 		}
 
 		shadow(shadow) {

@@ -8,10 +8,9 @@ import {
 	createInstance,
 	shouldSetTextContent,
 } from "./options";
-export const HostRoot = 0;
+const HostRoot = 0;
 const HostComponent = 1;
 const HostText = 2;
-const Fragment = 3;
 const NoFlags = 0;
 const Placement = 2;
 const Update = 4;
@@ -19,6 +18,8 @@ const ChildDeletion = 16;
 const Incomplete = 32768;
 const MutationMask = Placement | Update | ChildDeletion;
 const StaticMask = 4194304;
+
+export const currentQueue = { current: null };
 var workInProgress = null;
 function childIsObject(child) {
 	return typeof child == "object" && child != null;
@@ -135,16 +136,6 @@ function ChildReconciler(shouldTrackSideEffects) {
 		return createFiberFromElement(element, returnFiber);
 	}
 
-	function updateFragment(returnFiber, current, fragment, key) {
-		if (current === null || current.tag !== Fragment) {
-			// Insert
-			return createFiberFromFragment(fragment, key, returnFiber);
-		} else {
-			// Update
-			return cloneFiber(current, fragment, returnFiber);
-		}
-	}
-
 	function createChild(returnFiber, newChild) {
 		if (childIsText(newChild)) {
 			// Text nodes don't have keys. If the previous node is implicitly keyed
@@ -153,8 +144,6 @@ function ChildReconciler(shouldTrackSideEffects) {
 			return createFiberFromText("" + newChild, returnFiber);
 		}
 		if (childIsObject(newChild)) {
-			if (childIsArray(newChild))
-				return createFiberFromFragment(newChild, null, returnFiber);
 			return createFiberFromElement(newChild, returnFiber);
 		}
 		return null;
@@ -173,10 +162,6 @@ function ChildReconciler(shouldTrackSideEffects) {
 		}
 
 		if (childIsObject(newChild)) {
-			if (childIsArray(newChild)) {
-				if (key !== null) return null;
-				return updateFragment(returnFiber, oldFiber, newChild, null);
-			}
 			if (newChild.key === key)
 				return updateElement(returnFiber, oldFiber, newChild);
 			return null;
@@ -193,10 +178,6 @@ function ChildReconciler(shouldTrackSideEffects) {
 			return updateTextNode(returnFiber, matchedFiber, "" + newChild);
 		}
 		if (childIsObject(newChild)) {
-			if (childIsArray(newChild)) {
-				var matched = existingChildren.get(newIdx) || null;
-				return updateFragment(returnFiber, matched, newChild, null);
-			}
 			var matched = existingChildren.get(
 				newChild.key === null ? newIdx : newChild.key
 			);
@@ -465,12 +446,6 @@ function reconcileChildren(current, workInProgress, nextChildren) {
 	}
 }
 
-function updateFragment(current, workInProgress) {
-	var nextChildren = workInProgress.pendingProps;
-	reconcileChildren(current, workInProgress, nextChildren);
-	return workInProgress.child;
-}
-
 function updateHostRoot(current, workInProgress) {
 	var prevState = workInProgress.memoizedState;
 	var prevChildren = prevState.element;
@@ -510,10 +485,7 @@ function beginWork(current, workInProgress) {
 			return updateHostComponent(current, workInProgress);
 		case HostText:
 			return null;
-		case Fragment:
-			return updateFragment(current, workInProgress);
 	}
-
 	throw new Error(
 		"Unknown unit of work tag (" +
 			workInProgress.tag +
@@ -574,7 +546,6 @@ function completeWork(current, workInProgress) {
 	// for hydration.
 
 	switch (workInProgress.tag) {
-		case Fragment:
 		case HostRoot: {
 			bubbleProperties(workInProgress);
 			return null;
@@ -784,7 +755,7 @@ function commitMutationEffects(root, finishedWork) {
 	commitMutationEffectsOnFiber(finishedWork, root);
 }
 
-function recursivelyTraverseMutationEffects(root, parentFiber, lanes) {
+function recursivelyTraverseMutationEffects(root, parentFiber) {
 	// Deletions effects can be scheduled on any fiber type. They need to happen
 	// before the children effects hae fired.
 	var deletions = parentFiber.deletions;
@@ -813,9 +784,7 @@ function commitHostComponentMutations(finishedWork) {
 	var flags = finishedWork.flags;
 	if (flags & Update) {
 		var instance = finishedWork.stateNode;
-
 		if (instance == null) return;
-
 		// Commit the work prepared earlier.
 		var newProps = finishedWork.memoizedProps; // For hydration we reuse the update path but we treat the oldProps
 		// as the newProps. The updatePayload will contain the real change in
@@ -827,7 +796,7 @@ function commitHostComponentMutations(finishedWork) {
 	}
 }
 
-function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
+function commitMutationEffectsOnFiber(finishedWork, root) {
 	// The effect flag should be checked *after* we refine the type of fiber,
 	// because the fiber tag is more specific. An exception is any flag related
 	// to reconcilation, because those can be set on all fiber types.
@@ -904,16 +873,6 @@ function completeUnitOfWork(unitOfWork) {
 	} while (completedWork !== null); // We've reached the root.
 }
 
-function commitRoot(root) {
-	var finishedWork = root.finishedWork;
-	var lanes = root.finishedLanes;
-	root.finishedWork = null;
-	if (isMutation(finishedWork))
-		commitMutationEffects(root, finishedWork, lanes);
-	root.current = finishedWork;
-	return null;
-}
-
 function isMutation({ flags, subtreeFlags }) {
 	return (
 		(flags & MutationMask) != NoFlags ||
@@ -942,9 +901,9 @@ function FiberNode(tag, pendingProps, key) {
 	this.deletions = null;
 	this.alternate = null;
 }
-export function createFiber(tag, pendingProps, key, returnFiber) {
+function createFiber(tag, pendingProps, key, returnFiber = null) {
 	const fiber = new FiberNode(tag, pendingProps, key);
-	if (typeof returnFiber != "undefined") fiber.return = returnFiber;
+	fiber.return = returnFiber;
 	return fiber;
 }
 
@@ -976,7 +935,6 @@ function createWorkInProgress(current, pendingProps) {
 
 	workInProgress.flags = current.flags & StaticMask;
 	workInProgress.childLanes = current.childLanes;
-	workInProgress.lanes = current.lanes;
 	workInProgress.child = current.child;
 	workInProgress.memoizedProps = current.memoizedProps;
 	workInProgress.memoizedState = current.memoizedState;
@@ -998,10 +956,6 @@ function createFiberFromElement(element, returnFiber) {
 	fiber.type = element.type;
 	return fiber;
 }
-function createFiberFromFragment(elements, key, returnFiber) {
-	return createFiber(Fragment, elements, key, returnFiber);
-}
-
 function createFiberFromText(content, returnFiber) {
 	return createFiber(HostText, content, null, returnFiber);
 }
@@ -1077,20 +1031,7 @@ function processUpdateQueue(workInProgress) {
 	}
 }
 
-export function performUpdate(current) {
-	if (current.tag == HostRoot) {
-		const root = current.stateNode;
-		root.finishedWork = null;
-		workInProgress = createWorkInProgress(root.current, null);
-		while (workInProgress !== null) {
-			performUnitOfWork(workInProgress);
-		}
-		root.finishedWork = root.current.alternate;
-		commitRoot(root);
-	}
-}
-
-export function createRootFiber() {
+export function createContainer(surface) {
 	const fiber = createFiber(HostRoot, null, null);
 	fiber.memoizedState = { element: null };
 	fiber.updateQueue = {
@@ -1099,7 +1040,47 @@ export function createRootFiber() {
 		lastBaseUpdate: null,
 		pending: null,
 	};
-	return fiber;
+
+	const container = {
+		containerInfo: surface,
+		current: fiber,
+		finishedWork: null,
+	};
+	container.current.stateNode = container;
+	const destroy = () => {
+		console.log("call destrory");
+		// container.current.updateQueue = null;
+		// currentQueue.current = null;
+	};
+	const update = (children) => updateContainer(container, children);
+
+	return Object.assign(container, { update, destroy });
 }
 
+export function cleanContainer(container) {
+	container.current.updateQueue = null;
+	currentQueue.current = null;
+}
+
+export function updateContainer(container, children) {
+	var current = container.current;
+	var updateQueue = current.updateQueue;
+	var update = { next: null, payload: { element: children } };
+	update.next = update;
+	currentQueue.current = updateQueue;
+	currentQueue.current.pending = update;
+
+	if (current.tag == HostRoot) {
+		const root = current.stateNode;
+		root.finishedWork = null;
+		workInProgress = createWorkInProgress(root.current, null);
+		while (workInProgress !== null) performUnitOfWork(workInProgress);
+		root.finishedWork = root.current.alternate;
+		var finishedWork = root.finishedWork;
+		root.finishedWork = null;
+		if (isMutation(finishedWork)) commitMutationEffects(root, finishedWork);
+		root.current = finishedWork;
+	}
+	currentQueue.current = null;
+}
 export { Container } from "./options";

@@ -1,6 +1,4 @@
 import shallowEqual from "shallowequal";
-
-import { createRootFiber, performUpdate } from ".";
 import {
 	Circle,
 	ClipPath,
@@ -15,19 +13,16 @@ import {
 	Surface,
 	Text,
 	Transform,
+	getScale,
+	Inject,
+	Delete,
+	InjectBefore,
 } from "../canvas";
 import * as Types from "./Types";
-export const currentQueue = { current: null };
-export const toString = Object.prototype.toString;
-export function isPlainObject(object) {
-	return toString.call(object) == "[object Object]";
-}
+
+export { Delete, InjectBefore, Inject };
 export const shouldSetTextContent = (props) =>
 	typeof props.children == "string" || typeof props.children == "number";
-export const Inject = 1;
-export const Delete = 2;
-export const InjectBefore = 0;
-
 const EVENT_TYPES = {
 	onClick: "click",
 	onMouseMove: "mousemove",
@@ -92,12 +87,6 @@ export function createInstance(type, props) {
 }
 
 const pooledTransform = new Transform();
-function getScale(props, key) {
-	if (props.scale == null) return 1;
-	if (isPlainObject(props.scale)) return props.scale[key];
-	if (+props.scale == props.scale) return props.scale;
-	return 1;
-}
 
 export function commitUpdate(instance, props, prevProps = {}) {
 	if (shallowEqual(props, prevProps)) return;
@@ -108,10 +97,8 @@ export function commitUpdate(instance, props, prevProps = {}) {
 	instance.height = props.height || null;
 	pooledTransform._transform(1, 0, 0, 1, 0, 0);
 	pooledTransform.move(props.x, props.y);
-
 	pooledTransform.rotate(props.rotate || 0, props.originX, props.originY);
 	pooledTransform.scale(scaleX, scaleY, props.originX, props.originY);
-
 	const transform = props.transform;
 	if (transform instanceof Transform) {
 		pooledTransform.transform(
@@ -145,11 +132,7 @@ export function commitUpdate(instance, props, prevProps = {}) {
 	if (props.cursor !== prevProps.cursor || props.title !== prevProps.title) {
 		instance.indicate(props.cursor, props.title);
 	}
-
-	if (props.hidden !== prevProps.hidden) {
-		if (props.hidden) instance.hide();
-		else instance.show();
-	}
+	if (props.hidden !== prevProps.hidden) instance.visibility(props.hidden);
 	if (instance.blend && props.opacity != prevProps.opacity)
 		instance.blend(props.opacity);
 	const match = createMatch(instance.type, instance, props, prevProps);
@@ -283,28 +266,15 @@ function applyStroke(instance, props, prevProps) {
 	}
 }
 
+import { createContainer } from ".";
 export function Container(element) {
 	const surface = new Surface(element);
-	const container = {
-		containerInfo: surface,
-		current: createRootFiber(),
-		finishedWork: null,
-	};
-	container.current.stateNode = container;
-	this.invalidate = (children, props) => {
-		var current = container.current;
-		var updateQueue = current.updateQueue;
-		var update = { next: null, payload: { element: children } };
-		update.next = update;
-		currentQueue.current = updateQueue;
-		currentQueue.current.pending = update;
-		performUpdate(current);
-		currentQueue.current = null;
-		surface.resize(props);
+	const { update, destroy } = createContainer(surface);
+	this.invalidate = surface.invalidate.bind(surface);
+	this.resize = surface.resize.bind(surface);
+	this.update = (children) => {
+		update(children);
 		surface.invalidate();
 	};
-	this.destroy = () => {
-		container.current.updateQueue = null;
-		currentQueue.current = null;
-	};
+	this.destroy = destroy;
 }

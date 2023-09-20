@@ -17,6 +17,21 @@ export * from "./Base";
 export const LinearGradient = withFill("linear");
 export const RadialGradient = withFill("radial");
 export const Pattern = withFill("pattern");
+
+export const Inject = 1;
+export const Delete = 2;
+export const InjectBefore = 0;
+
+export const toString = Object.prototype.toString;
+export function isPlainObject(object) {
+	return toString.call(object) == "[object Object]";
+}
+export function getScale(props, key) {
+	if (props.scale == null) return 1;
+	if (isPlainObject(props.scale)) return props.scale[key];
+	if (+props.scale == props.scale) return props.scale;
+	return 1;
+}
 function getSurface() {
 	var previousHit = null,
 		previousHitSurface = null;

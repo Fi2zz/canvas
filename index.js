@@ -1,8 +1,12 @@
 import {
 	Children,
-	Component,
 	cloneElement,
 	createElement,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	Component,
 	createRef,
 } from "react";
 import { Container } from "./Container";
@@ -30,32 +34,46 @@ function normalize(children, parent) {
 	});
 }
 
-export class Surface extends Component {
-	static displayName = "Surface";
-	static defaultProps = { resolution: window.devicePixelRatio || 1 };
-	ref = createRef();
+export class Canvas extends Component {
+	constructor(props) {
+		super(props);
+		this.ref = createRef();
+	}
+
 	componentDidMount() {
 		this.container = new Container(this.ref.current);
-		this.componentDidUpdate();
+		this.componentDidUpdate(this.props, this.state);
 	}
-	componentWillUnmount = () => this.container.detroy();
-	componentDidUpdate = () => {
+
+	componentDidUpdate(prevProps, prevState) {
+
+		console.log('y')
 		const children = normalize(this.props.children, null);
-		this.container.invalidate(children, this.props);
-	};
-	get _props() {
-		const { accessKey, className, draggable, role, tabIndex, title, style } =
-			this.props;
-		return {
-			accessKey,
-			className,
-			draggable,
-			role,
-			tabIndex,
-			title,
-			style,
-			ref: this.ref,
-		};
+		this.container.update(children);
+		this.container.resize(this.props);
+		this.container.invalidate();
 	}
-	render = () => createElement("canvas", this._props);
+
+	componentWillUnmount() {
+		this.container.destroy();
+	}
+
+	render() {
+		const props = this.props;
+
+		return createElement("canvas", {
+			accessKey: props.accessKey,
+			className: props.className,
+			draggable: props.draggable,
+			role: props.role,
+			tabIndex: props.tabIndex,
+			title: props.title,
+			style: props.style,
+			ref: this.ref,
+		});
+	}
 }
+
+Canvas.defaultProps = {
+	resolution: window.devicePixelRatio || 1,
+};
